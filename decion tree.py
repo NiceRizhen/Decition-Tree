@@ -1,19 +1,25 @@
 # coding=utf-8
 # the implementation of the decition tree algothyme!
 
-import numpy as np
 import math
+import numpy as np
 
 # data 的行数-1即为在list里的下标
-list_name = ['色泽', '根蒂', '敲声', '纹理', '脐部', '触感', '密度', '含糖率']
+abbr_list = ['色泽', '根蒂', '敲声', '纹理', '脐部', '触感', '密度', '含糖率']
 wmdata = np.loadtxt(open("wmdata.csv"), dtype=np.str, delimiter=",", skiprows = 1)
 
-# 转置， 使每一行为同一属性
-wmdata = wmdata.T
+# 树结点的定义
+class node:
+    def __init__(self, type=None):
+        self.type = type
+        self.childlist = []
+        self.attrlist = []
 
-C = ['色泽', '根蒂', '敲声', '纹理', '脐部', '触感', '密度', '含糖率']
-D = []
+    def add_child(self, child, attr):
+        self.childlist.append(child)
+        self.attrlist.append(attr)
 
+# 对数据进行预处理，这里针对数据集修改
 def data_process(data):
     res = data
     for i,d in enumerate(data[-3, :]):
@@ -30,61 +36,132 @@ def data_process(data):
 
     return res
 
-# 输入的data为某一属性的数据，输出该属性下的类别与个数
-def get_type(data):
-    if(len(data) is 0 or data is None):
-        return None
+# 计算样本里的正例、反例个数
+def get_type(s_list):
+    z = 0
+    f = 0
 
-    type = []
-    sta = {}
-
-    for i in data:
-        if i not in type:
-            type.append(i)
-            sta[i] = 0
+    for i in s_list:
+        if wmdata[i][-1] == wmdata[s_list[0]][-1]:
+            z += 1
         else:
-            sta[i] += 1
+            f += 1
 
-    return sta
+    return [z, f]
 
-# 输入data为某属性的数据, ent为信息熵
-def compute_gain(data, ent):
-    sta = get_type(data)
-    num = len(data)
+# 找到最优划分属性和每种属性的gain
+def compute_gain(s_list, a_list):
+    gain_dict = {}
 
-    staz = sta
-    for i in staz:
-        staz[i] = 0
+    ent = compute_ent(s_list)
 
-    for i in data:
-        staz[i] = staz[i] + 1
+    for attr in a_list:
+        i = abbr_list.index(attr) + 1
 
-    res = 0
-    for i in sta.keys():
-        # z 表示该分类下正例的个数，all表示该分类样本的个数
-        z = staz[i]
-        all = sta[i]
+        abbr_type = []
+        abbr_num = {}
+        for s in s_list:
+            if wmdata[s][i] not in abbr_type:
+                abbr_type.append(wmdata[s][i])
+                abbr_num[wmdata[s][i]] = 1
+            else:
+                abbr_num[wmdata[s][i]] += 1
 
-        # 计算每一类的信息熵
-        res = res - (all/num) * ((z/all) * math.log(z/all,2)\
-                                 + ((all-z)/all) * math.log((all-z)/all, 2))
+        all = 0
+        gain = 0
+        for num in abbr_num.values():
+            all += num
 
-    gain = ent - res
+        for num in abbr_num.values():
+            gain = gain - (num/all) * math.log(num/all, 2)
 
-    return gain
+        gain_dict[attr] = ent - gain
 
-# 传入
-def compute_ent(data):
-    res = 0
-    num = len(data)
+    # 找到最优划分属性
+    res = None
+    max = -math.inf
+    for gain in gain_dict.keys():
+        if gain_dict[gain] > max :
+            res = gain
+            max = gain_dict[gain]
 
-    sta = get_type(data)
-    for n in sta.values():
-        res = res - (n/num) * math.log(n/num, 2)
+    return  res, gain_dict
+
+# 计算当前样本集的信息熵
+def compute_ent(s_list):
+
+    z, f = get_type(s_list)
+    res = - z/(z+f) * math.log(z/(z+f), 2)\
+          - f/(z+f) * math.log(f/(z+f), 2)
 
     return res
 
-def build_tree():
-    new_data = data_process(wmdata)
+# 判断样本集中的样本是否同一类别
+def is_same_type(s_list):
+    t = wmdata[s_list[0]][-1]
 
-    ent = compute_ent(new_data[-1])
+    for i in s_list:
+        if wmdata[i][-1] != t:
+            return False
+
+    return True
+
+# 找出当前样本中个数较多的类别
+def get_most_type(s_list):
+    type_list = []
+    type_num = {}
+
+    # 记录出现的类别和个数
+    for i in s_list:
+        t = wmdata[i][-1]
+        if t not in type_list:
+            type_list.append(t)
+            type_num[t] = 1
+        else:
+            type_num[t] += 1
+
+    max = 0
+    res = None
+    for i in type_num.keys():
+        if type_num[i] > max:
+            res = i
+            max = type_num[i]
+
+    return res
+
+# 核心部分，通过样本集和属性集生成决策树
+def treeGenerate(s_list, a_list):
+
+    this = node()
+
+    if is_same_type(s_list):
+        this.type = wmdata[s_list[0]][-1]
+        return this
+
+    if a_list is None:
+        this.type = get_most_type(s_list)
+        return this
+
+    gain, gain_dict = compute_gain(s_list, a_list)
+
+    this.type = gain
+
+    index = abbr_list.index(gain) + 1
+    a_list_child = a_list.remove(gain)
+    for attr_type in gain_dict.keys():
+        s_list_child = []
+        for i in s_list:
+            if wmdata[i][index] == attr_type:
+                s_list_child.append(i)
+        if len(s_list_child) > 0:
+            this.add_child(treeGenerate(s_list_child, a_list_child), attr_type)
+
+    return this
+
+if __name__ == "__main__":
+    s_list = list(range(len(wmdata)))
+    a_list = abbr_list
+
+    tree = treeGenerate(s_list, a_list)
+
+    print(tree.childlist)
