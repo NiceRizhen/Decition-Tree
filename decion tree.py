@@ -5,8 +5,8 @@ import math
 import numpy as np
 
 # data 的行数-1即为在list里的下标
-abbr_list = ['色泽', '根蒂', '敲声', '纹理', '脐部', '触感', '密度', '含糖率']
-wmdata = np.loadtxt(open("wmdata.csv"), dtype=np.str, delimiter=",", skiprows = 1)
+abbr_list = ['色泽', '根蒂', '敲声', '纹理', '脐部', '触感']
+wmdata = np.loadtxt(open("wmdata.csv"), dtype=str, delimiter=",", skiprows = 1)
 
 # 树结点的定义
 class node:
@@ -19,7 +19,7 @@ class node:
         self.childlist.append(child)
         self.attrlist.append(attr)
 
-# 对数据进行预处理，这里针对数据集修改
+# 对数据进行预处理, 这个函数具有弹性
 def data_process(data):
     res = data
     for i,d in enumerate(data[-3, :]):
@@ -52,40 +52,67 @@ def get_type(s_list):
 # 找到最优划分属性和每种属性的gain
 def compute_gain(s_list, a_list):
     gain_dict = {}
-
+    sample_num = len(s_list)
     ent = compute_ent(s_list)
+
+    # 用于判断正反例
+    flag = wmdata[s_list[0]][-1]
 
     for attr in a_list:
         i = abbr_list.index(attr) + 1
 
         abbr_type = []
         abbr_num = {}
+
+        # 计算每种属性的信息增益,并放入gain_dict中
+        # 先计算每种属性不同类别的正反例个数，放在abbr_num[abbr][]里
         for s in s_list:
             if wmdata[s][i] not in abbr_type:
                 abbr_type.append(wmdata[s][i])
-                abbr_num[wmdata[s][i]] = 1
+                if (wmdata[s][-1] == flag):
+                    abbr_num[wmdata[s][i]] = [1, 0]
+                else:
+                    abbr_num[wmdata[s][i]] = [0, 1]
             else:
-                abbr_num[wmdata[s][i]] += 1
+                if (wmdata[s][-1] == flag):
+                    abbr_num[wmdata[s][i]][0] += 1
+                else:
+                    abbr_num[wmdata[s][i]][1] += 1
 
-        all = 0
-        gain = 0
+        # print(abbr_num)
+        # 再计算该属性总的信息增益
+        ent_abbr_list = []
         for num in abbr_num.values():
-            all += num
+            z = num[0]
+            f = num[1]
 
-        for num in abbr_num.values():
-            gain = gain - (num/all) * math.log(num/all, 2)
+            if z != 0 and f != 0:
+                gain = -z/(z+f) * math.log(z/(z+f), 2) - f/(z+f) * math.log(f/(z+f), 2)
+            else:
+                gain = 0
+            ent_abbr_list.append([gain, z+f])
 
-        gain_dict[attr] = ent - gain
+        ent_abbr = 0
+        for i in ent_abbr_list:
+            ent_abbr += (i[1]/sample_num) * i[0]
+
+        gain_dict[attr] = ent - ent_abbr
 
     # 找到最优划分属性
     res = None
     max = -math.inf
     for gain in gain_dict.keys():
-        if gain_dict[gain] > max :
+        if gain_dict[gain] > max:
             res = gain
             max = gain_dict[gain]
 
-    return  res, gain_dict
+    index = abbr_list.index(res) + 1
+    attr_type_list = []
+    for s in s_list:
+        if wmdata[s][index] not in attr_type_list:
+            attr_type_list.append(wmdata[s][index])
+
+    return  res, attr_type_list
 
 # 计算当前样本集的信息熵
 def compute_ent(s_list):
@@ -103,6 +130,18 @@ def is_same_type(s_list):
     for i in s_list:
         if wmdata[i][-1] != t:
             return False
+
+    return True
+
+# 判断是否当前所有属性都单一取值
+def is_same_attr(s_list, a_list):
+    for a in a_list:
+        index = abbr_list.index(a) + 1
+        attr = wmdata[s_list[0]][index]
+
+        for s in s_list:
+            if wmdata[s][index] != attr:
+                return False
 
     return True
 
@@ -131,37 +170,51 @@ def get_most_type(s_list):
 
 # 核心部分，通过样本集和属性集生成决策树
 def treeGenerate(s_list, a_list):
-
     this = node()
 
     if is_same_type(s_list):
         this.type = wmdata[s_list[0]][-1]
         return this
 
-    if a_list is None:
+    if a_list is None or is_same_attr(s_list, a_list):
         this.type = get_most_type(s_list)
         return this
 
-    gain, gain_dict = compute_gain(s_list, a_list)
-
+    gain, attr_type_dict = compute_gain(s_list, a_list)
+    # print(gain_dict)
     this.type = gain
 
     index = abbr_list.index(gain) + 1
-    a_list_child = a_list.remove(gain)
-    for attr_type in gain_dict.keys():
+    a_list.remove(gain)
+    # print(a_list)
+
+    # 根据划分属性的不同类别，继续向下划分
+    for attr_type in attr_type_dict:
         s_list_child = []
         for i in s_list:
             if wmdata[i][index] == attr_type:
                 s_list_child.append(i)
+
         if len(s_list_child) > 0:
-            this.add_child(treeGenerate(s_list_child, a_list_child), attr_type)
+            this.add_child(treeGenerate(s_list_child, a_list), attr_type)
 
     return this
+
+# 定义一个函数去展示生成了的决策树
+# 传入当前树节点和在树中的层数，用bfs
+def traverse_tree(tree, floor, attr = None, attr_type = None, root = False):
+    if root is True:
+        print('The', floor, 'floor: ', tree.type)
+    else:
+        print('The', floor, 'floow if', attr, 'is', attr_type, ',then', tree.type)
+    if(len(tree.childlist) > 0):
+        for i, child in enumerate(tree.childlist):
+            traverse_tree(child, floor+1, attr = tree.type, attr_type=tree.attrlist[i])
+
 
 if __name__ == "__main__":
     s_list = list(range(len(wmdata)))
     a_list = abbr_list
 
     tree = treeGenerate(s_list, a_list)
-
-    print(tree.childlist)
+    traverse_tree(tree, 1, root=True)
