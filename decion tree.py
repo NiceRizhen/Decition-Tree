@@ -1,10 +1,9 @@
 # coding=utf-8
-# the implementation of the decition tree algothyme!
-
+# The implementation of the decition tree algorithm!
 import math
 import numpy as np
 
-# data 的行数-1即为在list里的下标
+# 定义属性集合, 用numpy读取数据
 abbr_list = ['色泽', '根蒂', '敲声', '纹理', '脐部', '触感']
 wmdata = np.loadtxt(open("wmdata.csv"), dtype=str, delimiter=",", skiprows = 1)
 
@@ -19,16 +18,17 @@ class node:
         self.childlist.append(child)
         self.attrlist.append(attr)
 
-# 对数据进行预处理, 这个函数具有弹性
+# 对数据进行预处理
+# 本函数可以自行设置
 def data_process(data):
     res = data
-    for i,d in enumerate(data[-3, :]):
+    for i,d in enumerate(data[ : , -3]):
         if(d < 0.5):
             res[-3, i] = 'small'
         else:
             res[-3, i] = 'big'
 
-    for i,d in enumerate(data[-2, :]):
+    for i,d in enumerate(data[ : , -2]):
         if(d < 0.5):
             res[-3, i] = 'small'
         else:
@@ -98,7 +98,7 @@ def compute_gain(s_list, a_list):
 
         gain_dict[attr] = ent - ent_abbr
 
-    # 找到最优划分属性
+    # 找到最优划分属性和这个属性对应的属性类别
     res = None
     max = -math.inf
     for gain in gain_dict.keys():
@@ -115,6 +115,7 @@ def compute_gain(s_list, a_list):
     return  res, attr_type_list
 
 # 计算当前样本集的信息熵
+# 返回最优划分属性和该属性的类别
 def compute_ent(s_list):
 
     z, f = get_type(s_list)
@@ -168,6 +169,16 @@ def get_most_type(s_list):
 
     return res
 
+# 遍历生成的决策树
+def traverse_tree(tree, floor, attr = None, attr_type = None, root = False):
+    if root is True:
+        print('The', floor, 'floor:', tree.type)
+    else:
+        print('The', floor, 'floor: if', attr, 'is', attr_type, ',then', tree.type)
+    if(len(tree.childlist) > 0):
+        for i, child in enumerate(tree.childlist):
+            traverse_tree(child, floor+1, attr = tree.type, attr_type=tree.attrlist[i])
+
 # 核心部分，通过样本集和属性集生成决策树
 def treeGenerate(s_list, a_list):
     this = node()
@@ -176,7 +187,7 @@ def treeGenerate(s_list, a_list):
         this.type = wmdata[s_list[0]][-1]
         return this
 
-    if a_list is None or is_same_attr(s_list, a_list):
+    if len(a_list) <= 0 or is_same_attr(s_list, a_list):
         this.type = get_most_type(s_list)
         return this
 
@@ -199,18 +210,6 @@ def treeGenerate(s_list, a_list):
             this.add_child(treeGenerate(s_list_child, a_list), attr_type)
 
     return this
-
-# 定义一个函数去展示生成了的决策树
-# 传入当前树节点和在树中的层数，用bfs
-def traverse_tree(tree, floor, attr = None, attr_type = None, root = False):
-    if root is True:
-        print('The', floor, 'floor: ', tree.type)
-    else:
-        print('The', floor, 'floow if', attr, 'is', attr_type, ',then', tree.type)
-    if(len(tree.childlist) > 0):
-        for i, child in enumerate(tree.childlist):
-            traverse_tree(child, floor+1, attr = tree.type, attr_type=tree.attrlist[i])
-
 
 if __name__ == "__main__":
     s_list = list(range(len(wmdata)))
